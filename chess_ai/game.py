@@ -1,10 +1,20 @@
 import logging
 from optparse import Option
 from typing import List, Dict, Set, Tuple, Optional, Iterator
+from numpy.typing import ArrayLike
 import numpy as np
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+
+class GameResolution:
+    """
+    End state of a game
+    """
+    WHITE_WINS = 1
+    BLACK_WINS = 2
+    DRAW = 3
 
 
 class PieceColor:
@@ -136,7 +146,7 @@ class Move:
         self.end_notation = end_notation or Board.space_to_notation(x2, y2)
 
     def __repr__(self):
-        return f"Move(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2}, piece={self.piece}, start_notation={self.start_notation}, end_notation={self.end_notation})"
+        return f"Move(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2}, piece={self.piece}, start_notation='{self.start_notation}', end_notation='{self.end_notation}')"
 
 
 class Board:
@@ -144,12 +154,13 @@ class Board:
     Represents a chess board.
     """
 
-    def __init__(self, board: Optional[np.ndarray] = None):
+    def __init__(self, board: Optional[ArrayLike] = None):
         if board is None:
             self.board = np.zeros((8, 8), dtype=np.int8)
             self.reset()
         else:
             self.board = np.array(board, dtype=np.int8)
+        self.validate_board_state()
 
     def __repr__(self) -> str:
         board_list = self.board.tolist()
@@ -167,6 +178,18 @@ class Board:
         for y in range(8):
             for x in range(8):
                 yield x, y, self.get_piece(x, y)
+
+    def validate_board_state(self):
+        """
+        Check that board state is valid (i.e. exactly one king of each color).
+        Raises a ValueError if the board state is invalid.
+        """
+        b_king_count = len(np.where(self.board == Piece.B_KING)[0])
+        w_king_count = len(np.where(self.board == Piece.W_KING)[0])
+        if b_king_count != 1:
+            raise ValueError(f"Invalid board state: {b_king_count} black kings")
+        if w_king_count != 1:
+            raise ValueError(f"Invalid board state: {w_king_count} white kings")
 
     def reset(self):
         """
@@ -204,9 +227,23 @@ class Board:
         Assumes validity of the move.
         """
         captured_piece = self.get_piece(move.x2, move.y2)
-        self.set_piece(move.x2, move.y2, move.piece)
-        self.set_piece(move.x1, move.y1, Piece.EMPTY)
-        return captured_piece
+        # check if this is a castle (rough check, assumes validity of move)
+        if (
+                move.piece == Piece.B_KING and captured_piece == Piece.B_ROOK
+                or move.piece == Piece.B_ROOK and captured_piece == Piece.B_KING
+                or move.piece == Piece.W_KING and captured_piece == Piece.W_ROOK
+                or move.piece == Piece.W_ROOK and captured_piece == Piece.W_KING
+        ):
+            # this is a castle, swap positions
+            self.set_piece(move.x2, move.y2, move.piece)
+            self.set_piece(move.x1, move.y1, captured_piece)
+            self.validate_board_state()
+            return Piece.EMPTY
+        else:
+            self.set_piece(move.x2, move.y2, move.piece)
+            self.set_piece(move.x1, move.y1, Piece.EMPTY)
+            self.validate_board_state()
+            return captured_piece
 
     @staticmethod
     def notation_to_space(notation: str) -> Tuple[int, int]:
@@ -260,9 +297,10 @@ class MoveValidator:
     Validates moves. Does not check for checks.
     """
 
-    def __init__(self, board: Board, history: List[Move] = []):
-        self.board = board
-        self.history = history
+    def __init__(self, game: "Game"):
+        self.game = game
+        self.board = game.board
+        self.history = game.history
 
     def _is_move_in_bounds(self, move: Move) -> bool:
         """
@@ -358,11 +396,100 @@ class MoveValidator:
 
     def _check_castle(self, move: Move) -> bool:
         """
-        Your king can not have moved- Once your king moves, you can no longer castle, even if you move the king back to the starting square. Many strategies involve forcing the opponent's king to move just for this reason. 
-        Your rook can not have moved- If you move your rook, you can't castle on that side anymore. Both the king and the rook you are castling with can't have moved. 
-        Your king can NOT be in check- Though castling often looks like an appealing escape, you can't castle while you are in check! Once you are out of check, then you can castle. Unlike moving, being checked does not remove the ability to castle later. 
-        Your king can not pass through check- If any square the king moves over or moves onto would put you in check, you can't castle. You'll have to get rid of that pesky attacking piece first!
+        Check if the move is a valid castle.
+        Requirements for a castle:
+            - There cannot be any pieces between the king and the rook
+            - Your king can not have moved
+            - Your rook can not have moved
+            - Your king can not be in check
+            - Your king can not pass through check
         """
+        print("Checking castle")
+        print("\t", move)
+        if move.piece == Piece.W_KING or move.piece == Piece.B_KING:
+            king_piece = move.piece
+            king_location = (move.x1, move.y1)
+            rook_piece = self.board.get_piece(move.x2, move.y2)
+            rook_location = (move.x2, move.y2)
+            if rook_piece not in (Piece.W_ROOK, Piece.B_ROOK) or Piece.color(rook_piece) != Piece.color(king_piece):
+                return False
+        elif move.piece == Piece.W_ROOK or move.piece == Piece.B_ROOK:
+            rook_piece = move.piece
+            rook_location = (move.x1, move.y1)
+            king_piece = self.board.get_piece(move.x2, move.y2)
+            king_location = (move.x2, move.y2)
+            if king_piece not in (Piece.W_KING, Piece.B_KING) or Piece.color(rook_piece) != Piece.color(king_piece):
+                return False
+        else:
+            return False
+
+        # Check that rook and king are in the correct starting positions
+        if king_piece == Piece.W_KING and king_location != (4, 7):
+            return False
+        elif king_piece == Piece.B_KING and king_location != (4, 0):
+            return False
+        elif rook_piece == Piece.W_ROOK and rook_location not in ((0, 7), (7, 7)):
+            return False
+        elif rook_piece == Piece.B_ROOK and rook_location not in ((0, 0), (7, 0)):
+            return False
+        
+        # Check if king has moved
+        king_moved = any([move.piece == king_piece for move in self.game.history])
+        if king_moved:
+            logger.info(f"Invalid move: Cannot castle after King has moved: {move}")
+            return False
+        
+        # Check if rook has moved
+        rook_moved = any([
+            move.piece == rook_piece and (move.x1, move.y1) == rook_location
+            for move in self.game.history
+        ])
+        if rook_moved:
+            logger.info(f"Invalid move: Cannot castle after Rook has moved: {move}")
+            return False
+        
+        # Check if king is in check
+        if self.check_for_check(Piece.color(king_piece)):
+            logger.info(f"Invalid move: Cannot castle while King is in check: {move}")
+            return False
+        
+        # Check if king passes through check
+        if king_location[0] < rook_location[0]:
+            # King side castle
+            for x in range(king_location[0] + 1, rook_location[0]):
+                test_move = Move(king_location[0], king_location[1], x, king_location[1], king_piece)
+                if self.test_move_for_check(test_move, turn=Piece.color(king_piece)):
+                    logger.info(f"Invalid move: Cannot castle through check: {move}")
+                    return False
+        else:
+            # Queen side castle
+            for x in range(rook_location[0] + 1, king_location[0]):
+                test_move = Move(king_location[0], king_location[1], x, king_location[1], king_piece)
+                if self.test_move_for_check(test_move, turn=Piece.color(king_piece)):
+                    logger.info(f"Invalid move: Cannot castle through check: {move}")
+                    return False
+        
+        # check if path is clear
+        if king_location[0] < rook_location[0]:
+            # King side castle
+            for x in range(king_location[0] + 1, rook_location[0]):
+                if self.board.get_piece(x, king_location[1]) != Piece.EMPTY:
+                    logger.info(f"Invalid move: Cannot castle through pieces: {move}")
+                    return False
+        else:
+            # Queen side castle
+            for x in range(rook_location[0] + 1, king_location[0]):
+                if self.board.get_piece(x, king_location[1]) != Piece.EMPTY:
+                    logger.info(f"Invalid move: Cannot castle through pieces: {move}")
+                    return False
+
+        # Check if king ends up in check
+        test_move = Move(king_location[0], king_location[1], rook_location[0], rook_location[1], king_piece)
+        if self.test_move_for_check(test_move, turn=Piece.color(king_piece)):
+            logger.info(f"Invalid move: Cannot castle into check: {move}")
+            return False
+
+        return True
 
     def _is_valid_pawn_move(self, move: Move) -> bool:
         """
@@ -442,9 +569,15 @@ class MoveValidator:
         """
         path_clear = self._is_path_clear(move)
         if not path_clear:
-            logger.info(f"Invalid move: rook move blocked: {move}")
-            return False
+            if self._check_castle(move):
+                # Castle, allowed
+                logger.info(f"Valid castle: {move}")
+                return True
+            else:
+                logger.info(f"Invalid move: rook move blocked: {move}")
+                return False
         valid = (move.x1 == move.x2 or move.y1 == move.y2)
+
         if not valid:
             logger.info(f"Invalid move: invalid rook move: {move}")
         return valid
@@ -468,6 +601,12 @@ class MoveValidator:
         """
         x_delta = abs(move.x2 - move.x1)
         y_delta = abs(move.y2 - move.y1)
+
+        # check for castle
+        if self._check_castle(move):
+            # Castle, allowed
+            logger.info(f"Valid castle: {move}")
+            return True
         # check that we're not moving to the same space as a piece of the same color
         end_piece = self.board.get_piece(move.x2, move.y2)
         if end_piece != Piece.EMPTY and Piece.color(end_piece) == Piece.color(move.piece):
@@ -478,9 +617,43 @@ class MoveValidator:
             logger.info(f"Invalid move: invalid king move: {move}")
         return valid
 
-    def is_valid_move(self, move: Move, turn: Optional[int]=None) -> bool:
+    def check_for_check(self, color: Optional[int]) -> bool:
         """
-        Check if a move is valid.
+        Check if the specified color is in check.
+        Return false if the color is None.
+        """
+        if color is None:
+            return False
+        king_piece = Piece.W_KING if color == PieceColor.WHITE else Piece.B_KING
+        king_x, king_y = self.board.find(king_piece)[0]
+        for x, y, piece in self.board:
+            if Piece.color(piece) != color and piece != Piece.EMPTY:
+                move = Move(x, y, king_x, king_y, piece)
+                if self._is_valid_move(move):
+                    logger.info(f"Found check for {color}: {move}")
+                    return True
+        return False
+
+    def test_move_for_check(self, move: Move, turn: Optional[int]) -> bool:
+        """
+        Check if a move would put the moving player in check.
+        Returns true if the move would put the player in check.
+        :param move: the move to test
+        :param turn: the color of the player making the move. If None, no check is performed.
+        """
+        # Test if move would leave us in check.
+        if turn is None:
+            return False
+        test_game = Game(self.board.copy(), turn)
+        try:
+            test_game.board.move(move)
+        except:
+            raise
+        return test_game.validator.check_for_check(Piece.color(move.piece))
+
+    def _is_valid_move(self, move: Move, turn: Optional[int]=None) -> bool:
+        """
+        Check if a move is valid. Does not check for check.
         :param move: The move to check.
         :param turn: The turn to check the move for. If None, no turn check is performed.
         """
@@ -515,6 +688,24 @@ class MoveValidator:
             return self._is_valid_king_move(move)
         else:
             raise ValueError("Invalid piece: {}".format(piece))
+
+    def is_valid_move(self, move: Move, turn: Optional[int]=None) -> bool:
+        """
+        Check if a move is valid. Checks for check.
+        :param move: The move to check.
+        :param turn: The turn to check the move for. If None, no turn check is performed.
+        """
+        turn = Piece.color(move.piece) if turn is None else turn
+        assert turn is not None
+        valid = self._is_valid_move(move, turn)
+        if not valid:
+            return False
+        # Test if move would leave us in check.
+        move_would_check = self.test_move_for_check(move, turn)
+        if move_would_check:
+            logger.info(f"Invalid move: Move would leave player in check: {move}")
+            return False
+        return True
 
     def get_valid_moves(self, x: int, y: int) -> List[Move]:
         """
@@ -562,6 +753,11 @@ class MoveValidator:
                 candidate_moves.append(Move(x, y, x - i, y, piece))
                 candidate_moves.append(Move(x, y, x, y + i, piece))
                 candidate_moves.append(Move(x, y, x, y - i, piece))
+            # add castling moves
+            if piece == Piece.B_ROOK and y == 0 and (x == 0 or x == 7):
+                candidate_moves.append(Move(x, y, 4, 0, piece))
+            elif piece == Piece.W_ROOK and y == 7 and (x == 0 or x == 7):
+                candidate_moves.append(Move(x, y, 4, 7, piece))
         elif piece in (Piece.B_QUEEN, Piece.W_QUEEN):
             candidate_moves = []
             for i in range(1, 8):
@@ -584,6 +780,13 @@ class MoveValidator:
                 Move(x, y, x - 1, y + 1, piece),
                 Move(x, y, x - 1, y - 1, piece),
             ]
+            # add castling moves
+            if piece == Piece.B_KING and x == 4 and y == 0:
+                candidate_moves.append(Move(x, y, 7, 0, piece))
+                candidate_moves.append(Move(x, y, 0, 0, piece))
+            elif piece == Piece.W_KING and x == 4 and y == 7:
+                candidate_moves.append(Move(x, y, 7, 7, piece))
+                candidate_moves.append(Move(x, y, 0, 7, piece))
         else:
             raise ValueError("Invalid piece: {}".format(piece))
         
@@ -603,49 +806,16 @@ class Game:
         self.board = board or Board()
         self.turn = turn or PieceColor.WHITE
         self.history: List[Move] = []
-        self.validator = MoveValidator(self.board, self.history)
+        self.validator = MoveValidator(self)
 
     def __repr__(self):
         return f"Game(board={self.board}, turn={self.turn})"
-
-    def check_for_check(self, color: int) -> bool:
-        """
-        Check if the specified color is in check.
-        """
-        king_piece = Piece.W_KING if color == PieceColor.WHITE else Piece.B_KING
-        king_x, king_y = self.board.find(king_piece)[0]
-        for x, y, piece in self.board:
-            if Piece.color(piece) != color and piece != Piece.EMPTY:
-                move = Move(x, y, king_x, king_y, piece)
-                if self.validator.is_valid_move(move):
-                    logger.info(f"Found check for {color}: {move}")
-                    return True
-        return False
-
-    def validate_move(self, move: Move) -> bool:
-        """
-        Check if the specified move is valid.
-        """
-        valid = self.validator.is_valid_move(move, self.turn)
-        if not valid:
-            return False
-        # Test if move would leave us in check.
-        test_game = Game(self.board.copy(), self.turn)
-        print("Testing for check")
-        print(test_game.board)
-        test_game.board.move(move)
-        print(test_game.board)
-        if test_game.check_for_check(Piece.color(move.piece)):
-            logger.info(f"Invalid move: Move would leave player in check: {move}")
-            print(test_game.board)
-            return False
-        return True
 
     def move(self, move: Move) -> bool:
         """
         Make a move. Returns True if the move was successful, False otherwise.
         """
-        if self.validate_move(move):
+        if self.validator.is_valid_move(move, self.turn):
             self.board.move(move)
             self.history.append(move)
             self.turn = PieceColor.opposite(self.turn)

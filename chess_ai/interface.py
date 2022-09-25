@@ -83,11 +83,11 @@ def update_display(
     # then draw highlights
     if selected_square is not None:
         x, y = selected_square
-        pygame.draw.rect(screen, (0, 255, 0), (font_padding / 2 + x * 64, font_padding / 2 + y * 64, 64, 64))
+        pygame.draw.rect(screen, (0, 255, 0), (int(font_padding / 2 + x * 64), int(font_padding / 2 + y * 64), 64, 64))
     if legal_moves is not None:
         for move in legal_moves:
             x, y = move.x2, move.y2
-            pygame.draw.rect(screen, (255, 0, 0), (font_padding / 2 + x * 64, font_padding / 2 + y * 64, 64, 64))
+            pygame.draw.rect(screen, (255, 0, 0), (int(font_padding / 2 + x * 64), int(font_padding / 2 + y * 64), 64, 64))
     for row in range(8):
         for col in range(8):
             piece = board.get_piece(col, row)
@@ -97,7 +97,30 @@ def update_display(
     pygame.display.flip()
 
 
-game = Game()
+# game = Game()
+# game = Game(board=Board(board=[
+#     [2, 3, 4, 5, 6, 4, 3, 2],
+#     [1, 1, 1, 1, 0, 0, 0, 1],
+#     [0, 0, 0, 0, 1, 1, 1, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 10, 7, 7, 0, 9],
+#     [7, 7, 7, 7, 0, 0, 7, 7],
+#     [8, 9, 10, 11, 12, 0, 0, 8],
+# ]), turn=1)
+
+game = Game(board=Board(board=[
+    [2, 3, 4, 5, 6, 0, 0, 2],
+    [1, 1, 1, 1, 4, 0, 0, 1],
+    [0, 0, 0, 0, 0, 3, 1, 0],
+    [0, 0, 0, 0, 1, 1, 9, 0],
+    [0, 0, 0, 0, 0, 7, 0, 0],
+    [0, 0, 0, 10, 7, 0, 0, 0],
+    [7, 7, 7, 7, 0, 0, 7, 7],
+    [8, 9, 10, 11, 8, 0, 0, 12],
+]), turn=1)
+
+
 
 selected_square: Optional[Tuple[int, int]] = None
 legal_moves: Optional[List[Move]] = None
