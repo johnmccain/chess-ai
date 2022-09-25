@@ -251,7 +251,11 @@ class Board:
         Convert a chess notation to a board space.
         """
         x = ord(notation[0]) - ord("a")
-        y = int(notation[1]) - 1
+        try:
+            y = "87654321".index(notation[1])
+        except ValueError:
+            # Invalid notation, substitute with -1
+            y = -1
         return x, y
 
     @staticmethod
@@ -259,7 +263,12 @@ class Board:
         """
         Convert a board space to a chess notation.
         """
-        return chr(x + ord("a")) + str(y + 1)
+        try:
+            y_part = "87654321"[y]
+        except IndexError:
+            # Invalid space, substitute with "x"
+            y_part = "x"
+        return chr(x + ord("a")) + y_part
 
     def pprint(self) -> None:
         """

@@ -56,7 +56,7 @@ def update_display(
                 pygame.Rect(font_padding / 2 + 64 * col, font_padding / 2 + 64 * row, 64, 64)
             )
     # then draw legend
-    row_names = "12345678"
+    row_names = "87654321"
     for row in range(8):
         # left
         screen.blit(
