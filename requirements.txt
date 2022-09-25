@@ -2,12 +2,15 @@ argon2-cffi==21.3.0
 argon2-cffi-bindings==21.2.0
 asttokens==2.0.8
 attrs==22.1.0
+autopep8==1.7.0
 backcall==0.2.0
 beautifulsoup4==4.11.1
 bleach==5.0.1
 certifi==2022.9.24
 cffi==1.15.1
 charset-normalizer==2.1.1
+# Editable Git install with no remote (chess-ai==0.4.10)
+-e c:\users\johnm\documents\projects\chess-ai\src
 colorama==0.4.5
 debugpy==1.6.3
 decorator==5.1.1
@@ -15,7 +18,9 @@ defusedxml==0.7.1
 entrypoints==0.4
 executing==1.1.0
 fastjsonschema==2.16.2
+flake8==5.0.4
 idna==3.4
+invoke==1.7.1
 ipykernel==6.15.3
 ipython==8.5.0
 ipython-genutils==0.2.0
@@ -33,6 +38,7 @@ jupyterlab-widgets==3.0.3
 lxml==4.9.1
 MarkupSafe==2.1.1
 matplotlib-inline==0.1.6
+mccabe==0.7.0
 mistune==2.0.4
 nbclient==0.6.8
 nbconvert==7.0.0
@@ -50,8 +56,10 @@ prometheus-client==0.14.1
 prompt-toolkit==3.0.31
 psutil==5.9.2
 pure-eval==0.2.2
+pycodestyle==2.9.1
 pycparser==2.21
 pydantic==1.10.2
+pyflakes==2.5.0
 Pygments==2.13.0
 pyparsing==3.0.9
 pyrsistent==0.18.1
@@ -72,6 +80,7 @@ stack-data==0.5.0
 terminado==0.15.0
 threadpoolctl==3.1.0
 tinycss2==1.1.1
+toml==0.10.2
 torch==1.12.1+cu113
 torchaudio==0.12.1+cu113
 torchvision==0.13.1+cu113
@@ -79,6 +88,7 @@ tornado==6.2
 tqdm==4.64.1
 traitlets==5.4.0
 typing_extensions==4.3.0
+Unidecode==1.3.4
 urllib3==1.26.12
 wcwidth==0.2.5
 webencodings==0.5.1

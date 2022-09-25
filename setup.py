@@ -22,8 +22,7 @@ setup(
     author_email='johnm.freestate@gmail.com',
 
     # Packages and depencies
-    package_dir={'': 'src'},
-    packages=find_packages('src'),
+    packages=["chess_ai"],
     install_requires=[
         'jinja2',
         'invoke>=0.13',
