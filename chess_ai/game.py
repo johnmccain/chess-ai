@@ -871,6 +871,9 @@ class Game:
             if not self.validator.has_valid_moves(PieceColor.WHITE):
                 logger.info("White is in checkmate!")
                 return GameResolution.BLACK_WINS
+        elif not self.validator.has_valid_moves(self.turn):
+            logger.info("Stalemate!")
+            return GameResolution.DRAW
         return GameResolution.UNDECIDED
 
     def move(self, move: Move) -> bool:
