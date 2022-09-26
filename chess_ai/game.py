@@ -3,21 +3,23 @@ from optparse import Option
 from typing import List, Dict, Set, Tuple, Optional, Iterator
 from numpy.typing import ArrayLike
 import numpy as np
+from enum import IntEnum
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-class GameResolution:
+class GameResolution(IntEnum):
     """
     End state of a game
     """
+    UNDECIDED = 0
     WHITE_WINS = 1
     BLACK_WINS = 2
     DRAW = 3
 
 
-class PieceColor:
+class PieceColor(IntEnum):
     WHITE = 0
     BLACK = 1
 
@@ -26,7 +28,13 @@ class PieceColor:
         return PieceColor.BLACK if color == PieceColor.WHITE else PieceColor.WHITE
 
 
-class Piece:
+class MoveType(IntEnum):
+    NORMAL = 0
+    CASTLE = 1
+    EN_PASSANT = 2
+
+
+class Piece(IntEnum):
     EMPTY = 0
 
     # Black
@@ -57,7 +65,7 @@ class Piece:
             raise ValueError("Invalid piece")
 
     @staticmethod
-    def name(piece: int) -> str:
+    def get_name(piece: int) -> str:
         if piece == Piece.B_PAWN:
             return "Black Pawn"
         elif piece == Piece.B_ROOK:
@@ -134,6 +142,7 @@ class Move:
             x2: int,
             y2: int,
             piece: int,
+            move_type: MoveType = MoveType.NORMAL,
             start_notation: Optional[str] = None,
             end_notation: Optional[str] = None
     ):
@@ -142,11 +151,12 @@ class Move:
         self.x2 = x2
         self.y2 = y2
         self.piece = piece
+        self.move_type = move_type
         self.start_notation = start_notation or Board.space_to_notation(x1, y1)
         self.end_notation = end_notation or Board.space_to_notation(x2, y2)
 
     def __repr__(self):
-        return f"Move(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2}, piece={self.piece}, start_notation='{self.start_notation}', end_notation='{self.end_notation}')"
+        return f"Move(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2}, piece={self.piece}, move_type={self.move_type}, start_notation='{self.start_notation}', end_notation='{self.end_notation}')"
 
 
 class Board:
@@ -226,20 +236,30 @@ class Board:
         Make a move on the board. Returns the piece that was captured (or empty space if no piece was captured).
         Assumes validity of the move.
         """
-        captured_piece = self.get_piece(move.x2, move.y2)
-        # check if this is a castle (rough check, assumes validity of move)
-        if (
-                move.piece == Piece.B_KING and captured_piece == Piece.B_ROOK
-                or move.piece == Piece.B_ROOK and captured_piece == Piece.B_KING
-                or move.piece == Piece.W_KING and captured_piece == Piece.W_ROOK
-                or move.piece == Piece.W_ROOK and captured_piece == Piece.W_KING
-        ):
+        if move.move_type == MoveType.CASTLE:
             # this is a castle, swap positions
+            target_piece = self.get_piece(move.x2, move.y2)
             self.set_piece(move.x2, move.y2, move.piece)
-            self.set_piece(move.x1, move.y1, captured_piece)
+            self.set_piece(move.x1, move.y1, target_piece)
             self.validate_board_state()
             return Piece.EMPTY
+        elif move.move_type == MoveType.EN_PASSANT:
+            # this is an en passant, swap positions and remove captured piece
+            self.set_piece(move.x2, move.y2, move.piece)
+            self.set_piece(move.x1, move.y1, Piece.EMPTY)
+            self.set_piece(move.x2, move.y1, Piece.EMPTY)
+            captured_piece = self.get_piece(move.x2, move.y1)
+            self.validate_board_state()
+            return captured_piece
         else:
+            # Check for pawn promotion
+            if move.piece == Piece.W_PAWN and move.y2 == 0:
+                # promote to queen
+                move.piece = Piece.W_QUEEN
+            elif move.piece == Piece.B_PAWN and move.y2 == 7:
+                # promote to queen
+                move.piece = Piece.B_QUEEN
+            captured_piece = self.get_piece(move.x2, move.y2)
             self.set_piece(move.x2, move.y2, move.piece)
             self.set_piece(move.x1, move.y1, Piece.EMPTY)
             self.validate_board_state()
@@ -326,7 +346,7 @@ class MoveValidator:
         # check that we're not moving to the same space as a piece of the same color
         end_piece = self.board.get_piece(move.x2, move.y2)
         if end_piece != Piece.EMPTY and Piece.color(end_piece) == Piece.color(move.piece):
-            logger.info(f"Invalid move: move to same color piece: {move}")
+            logger.debug(f"Invalid move: move to same color piece: {move}")
             return False
         if move.x1 == move.x2:
             # Vertical move
@@ -373,7 +393,7 @@ class MoveValidator:
                 while x < x_end and y > y_end:
                     print("actual:")
                     print("\t", (x, y))
-                    print("\t", self.board.space_to_notation(x, y) + "; " + Piece.name(self.board.get_piece(x, y)))
+                    print("\t", self.board.space_to_notation(x, y) + "; " + Piece.get_name(self.board.get_piece(x, y)))
 
                     if self.board.get_piece(x, y) != Piece.EMPTY:
                         return False
@@ -387,19 +407,23 @@ class MoveValidator:
         """
         Return true if the move is a valid en passant
         """
-        if move.piece == Piece.W_PAWN and move.y1 == 4 and move.y2 == 5:
+        if move.piece == Piece.W_PAWN and move.y2 - move.y1 == -1 and abs(move.x2 - move.x1) == 1:
             if self.board.get_piece(move.x2, move.y2) == Piece.EMPTY:
                 if self.board.get_piece(move.x2, move.y1) == Piece.B_PAWN:
                     if self.history[-1].piece == Piece.B_PAWN:
                         if abs(self.history[-1].y1 - self.history[-1].y2) == 2:
                             if self.history[-1].x1 == move.x2:
+                                logger.info(f"Valid en passant: {move}")
+                                move.move_type = MoveType.EN_PASSANT
                                 return True
-        elif move.piece == Piece.B_PAWN and move.y1 == 3 and move.y2 == 2:
+        if move.piece == Piece.B_PAWN and move.y2 - move.y1 == 1 and abs(move.x2 - move.x1) == 1:
             if self.board.get_piece(move.x2, move.y2) == Piece.EMPTY:
                 if self.board.get_piece(move.x2, move.y1) == Piece.W_PAWN:
                     if self.history[-1].piece == Piece.W_PAWN:
                         if abs(self.history[-1].y1 - self.history[-1].y2) == 2:
                             if self.history[-1].x1 == move.x2:
+                                logger.info(f"Valid en passant: {move}")
+                                move.move_type = MoveType.EN_PASSANT
                                 return True
         return False
 
@@ -413,8 +437,6 @@ class MoveValidator:
             - Your king can not be in check
             - Your king can not pass through check
         """
-        print("Checking castle")
-        print("\t", move)
         if move.piece == Piece.W_KING or move.piece == Piece.B_KING:
             king_piece = move.piece
             king_location = (move.x1, move.y1)
@@ -445,7 +467,7 @@ class MoveValidator:
         # Check if king has moved
         king_moved = any([move.piece == king_piece for move in self.game.history])
         if king_moved:
-            logger.info(f"Invalid move: Cannot castle after King has moved: {move}")
+            logger.debug(f"Invalid move: Cannot castle after King has moved: {move}")
             return False
         
         # Check if rook has moved
@@ -454,12 +476,12 @@ class MoveValidator:
             for move in self.game.history
         ])
         if rook_moved:
-            logger.info(f"Invalid move: Cannot castle after Rook has moved: {move}")
+            logger.debug(f"Invalid move: Cannot castle after Rook has moved: {move}")
             return False
         
         # Check if king is in check
         if self.check_for_check(Piece.color(king_piece)):
-            logger.info(f"Invalid move: Cannot castle while King is in check: {move}")
+            logger.debug(f"Invalid move: Cannot castle while King is in check: {move}")
             return False
         
         # Check if king passes through check
@@ -468,14 +490,14 @@ class MoveValidator:
             for x in range(king_location[0] + 1, rook_location[0]):
                 test_move = Move(king_location[0], king_location[1], x, king_location[1], king_piece)
                 if self.test_move_for_check(test_move, turn=Piece.color(king_piece)):
-                    logger.info(f"Invalid move: Cannot castle through check: {move}")
+                    logger.debug(f"Invalid move: Cannot castle through check: {move}")
                     return False
         else:
             # Queen side castle
             for x in range(rook_location[0] + 1, king_location[0]):
                 test_move = Move(king_location[0], king_location[1], x, king_location[1], king_piece)
                 if self.test_move_for_check(test_move, turn=Piece.color(king_piece)):
-                    logger.info(f"Invalid move: Cannot castle through check: {move}")
+                    logger.debug(f"Invalid move: Cannot castle through check: {move}")
                     return False
         
         # check if path is clear
@@ -483,21 +505,22 @@ class MoveValidator:
             # King side castle
             for x in range(king_location[0] + 1, rook_location[0]):
                 if self.board.get_piece(x, king_location[1]) != Piece.EMPTY:
-                    logger.info(f"Invalid move: Cannot castle through pieces: {move}")
+                    logger.debug(f"Invalid move: Cannot castle through pieces: {move}")
                     return False
         else:
             # Queen side castle
             for x in range(rook_location[0] + 1, king_location[0]):
                 if self.board.get_piece(x, king_location[1]) != Piece.EMPTY:
-                    logger.info(f"Invalid move: Cannot castle through pieces: {move}")
+                    logger.debug(f"Invalid move: Cannot castle through pieces: {move}")
                     return False
 
         # Check if king ends up in check
         test_move = Move(king_location[0], king_location[1], rook_location[0], rook_location[1], king_piece)
         if self.test_move_for_check(test_move, turn=Piece.color(king_piece)):
-            logger.info(f"Invalid move: Cannot castle into check: {move}")
+            logger.debug(f"Invalid move: Cannot castle into check: {move}")
             return False
 
+        move.move_type = MoveType.CASTLE
         return True
 
     def _is_valid_pawn_move(self, move: Move) -> bool:
@@ -507,14 +530,14 @@ class MoveValidator:
         # check that we're not moving to the same space as a piece of the same color
         end_piece = self.board.get_piece(move.x2, move.y2)
         if end_piece != Piece.EMPTY and Piece.color(end_piece) == Piece.color(move.piece):
-            logger.info(f"Invalid move: move to same color piece: {move}")
+            logger.debug(f"Invalid move: move to same color piece: {move}")
             return False
         if abs(move.y2 - move.y1) == 1:
             if move.x2 == move.x1:
                 # regular move
                 valid = self.board.get_piece(move.x2, move.y2) == Piece.EMPTY
                 if not valid:
-                    logger.info(f"Invalid move: vertical pawn move to occupied space: {move}")
+                    logger.debug(f"Invalid move: vertical pawn move to occupied space: {move}")
                 return valid
             elif abs(move.x2 - move.x1) == 1:
                 if self._check_en_passant(move):
@@ -524,21 +547,25 @@ class MoveValidator:
                     # normal diagonal attack
                     valid = self.board.get_piece(move.x2, move.y2) != Piece.EMPTY
                     if not valid:
-                        logger.info(f"Invalid move: diagonal pawn move to empty space: {move}")
+                        logger.debug(f"Invalid move: diagonal pawn move to empty space: {move}")
                     return valid
         elif abs(move.y2 - move.y1) == 2 and move.x1 == move.x2:
             # double move
             path_clear = self._is_path_clear(move)
 
             if not path_clear:
-                logger.info(f"Invalid move: pawn double move blocked: {move}")
+                logger.debug(f"Invalid move: pawn double move blocked: {move}")
+                return False
+
+            if self.board.get_piece(move.x2, move.y2) != Piece.EMPTY:
+                logger.debug(f"Invalid move: pawn double move to occupied space: {move}")
                 return False
 
             if Piece.color(move.piece) == PieceColor.WHITE:
                 return move.y1 == 6
             else:
                 return move.y1 == 1
-        logger.info(f"Invalid move: other invalid pawn move: {move}")
+        logger.debug(f"Invalid move: other invalid pawn move: {move}")
         return False
 
     def _is_valid_knight_move(self, move: Move) -> bool:
@@ -550,11 +577,11 @@ class MoveValidator:
         # check that we're not moving to the same space as a piece of the same color
         end_piece = self.board.get_piece(move.x2, move.y2)
         if end_piece != Piece.EMPTY and Piece.color(end_piece) == Piece.color(move.piece):
-            logger.info(f"Invalid move: move to same color piece: {move}")
+            logger.debug(f"Invalid move: move to same color piece: {move}")
             return False
         valid = (x_delta == 1 and y_delta == 2) or (x_delta == 2 and y_delta == 1)
         if not valid:
-            logger.info(f"Invalid move: invalid knight move: {move}")
+            logger.debug(f"Invalid move: invalid knight move: {move}")
         return valid
 
     def _is_valid_bishop_move(self, move: Move) -> bool:
@@ -565,11 +592,11 @@ class MoveValidator:
         y_delta = abs(move.y2 - move.y1)
         path_clear = self._is_path_clear(move)
         if not path_clear:
-            logger.info(f"Invalid move: bishop move blocked: {move}")
+            logger.debug(f"Invalid move: bishop move blocked: {move}")
             return False
         valid = x_delta == y_delta and x_delta != 0
         if not valid:
-            logger.info(f"Invalid move: invalid bishop move: {move}")
+            logger.debug(f"Invalid move: invalid bishop move: {move}")
         return valid
 
     def _is_valid_rook_move(self, move: Move) -> bool:
@@ -583,12 +610,12 @@ class MoveValidator:
                 logger.info(f"Valid castle: {move}")
                 return True
             else:
-                logger.info(f"Invalid move: rook move blocked: {move}")
+                logger.debug(f"Invalid move: rook move blocked: {move}")
                 return False
         valid = (move.x1 == move.x2 or move.y1 == move.y2)
 
         if not valid:
-            logger.info(f"Invalid move: invalid rook move: {move}")
+            logger.debug(f"Invalid move: invalid rook move: {move}")
         return valid
 
     def _is_valid_queen_move(self, move: Move) -> bool:
@@ -597,11 +624,11 @@ class MoveValidator:
         """
         path_clear = self._is_path_clear(move)
         if not path_clear:
-            logger.info(f"Invalid move: queen move blocked: {move}")
+            logger.debug(f"Invalid move: queen move blocked: {move}")
             return False
         valid = self._is_valid_rook_move(move) or self._is_valid_bishop_move(move)
         if not valid:
-            logger.info(f"Invalid move: invalid queen move: {move}")
+            logger.debug(f"Invalid move: invalid queen move: {move}")
         return valid
 
     def _is_valid_king_move(self, move: Move) -> bool:
@@ -619,11 +646,11 @@ class MoveValidator:
         # check that we're not moving to the same space as a piece of the same color
         end_piece = self.board.get_piece(move.x2, move.y2)
         if end_piece != Piece.EMPTY and Piece.color(end_piece) == Piece.color(move.piece):
-            logger.info(f"Invalid move: move to same color piece: {move}")
+            logger.debug(f"Invalid move: move to same color piece: {move}")
             return False
         valid = (x_delta <= 1 and y_delta <= 1)
         if not valid:
-            logger.info(f"Invalid move: invalid king move: {move}")
+            logger.debug(f"Invalid move: invalid king move: {move}")
         return valid
 
     def check_for_check(self, color: Optional[int]) -> bool:
@@ -712,7 +739,7 @@ class MoveValidator:
         # Test if move would leave us in check.
         move_would_check = self.test_move_for_check(move, turn)
         if move_would_check:
-            logger.info(f"Invalid move: Move would leave player in check: {move}")
+            logger.debug(f"Invalid move: Move would leave player in check: {move}")
             return False
         return True
 
@@ -764,9 +791,9 @@ class MoveValidator:
                 candidate_moves.append(Move(x, y, x, y - i, piece))
             # add castling moves
             if piece == Piece.B_ROOK and y == 0 and (x == 0 or x == 7):
-                candidate_moves.append(Move(x, y, 4, 0, piece))
+                candidate_moves.append(Move(x, y, 4, 0, piece, move_type=MoveType.CASTLE))
             elif piece == Piece.W_ROOK and y == 7 and (x == 0 or x == 7):
-                candidate_moves.append(Move(x, y, 4, 7, piece))
+                candidate_moves.append(Move(x, y, 4, 7, piece, move_type=MoveType.CASTLE))
         elif piece in (Piece.B_QUEEN, Piece.W_QUEEN):
             candidate_moves = []
             for i in range(1, 8):
@@ -791,11 +818,11 @@ class MoveValidator:
             ]
             # add castling moves
             if piece == Piece.B_KING and x == 4 and y == 0:
-                candidate_moves.append(Move(x, y, 7, 0, piece))
-                candidate_moves.append(Move(x, y, 0, 0, piece))
+                candidate_moves.append(Move(x, y, 7, 0, piece, move_type=MoveType.CASTLE))
+                candidate_moves.append(Move(x, y, 0, 0, piece, move_type=MoveType.CASTLE))
             elif piece == Piece.W_KING and x == 4 and y == 7:
-                candidate_moves.append(Move(x, y, 7, 7, piece))
-                candidate_moves.append(Move(x, y, 0, 7, piece))
+                candidate_moves.append(Move(x, y, 7, 7, piece, move_type=MoveType.CASTLE))
+                candidate_moves.append(Move(x, y, 0, 7, piece, move_type=MoveType.CASTLE))
         else:
             raise ValueError("Invalid piece: {}".format(piece))
         
@@ -804,6 +831,17 @@ class MoveValidator:
             if self.is_valid_move(move, Piece.color(piece)):
                 valid_moves.append(move)
         return valid_moves
+
+    def has_valid_moves(self, color: PieceColor) -> bool:
+        """
+        Check if the specified color has any valid moves.
+        """
+        for x in range(8):
+            for y in range(8):
+                if Piece.color(self.board.get_piece(x, y)) == color:
+                    if self.get_valid_moves(x, y):
+                        return True
+        return False
 
 
 class Game:
@@ -819,6 +857,21 @@ class Game:
 
     def __repr__(self):
         return f"Game(board={self.board}, turn={self.turn})"
+
+    def get_resolution(self) -> GameResolution:
+        """
+        Checks if game is over due to checkmate or stalemate.
+        """
+        logger.debug("Checking game resolution...")
+        if self.validator.check_for_check(PieceColor.BLACK):
+            if not self.validator.has_valid_moves(PieceColor.BLACK):
+                logger.info("Black is in checkmate!")
+                return GameResolution.WHITE_WINS
+        elif self.validator.check_for_check(PieceColor.WHITE):
+            if not self.validator.has_valid_moves(PieceColor.WHITE):
+                logger.info("White is in checkmate!")
+                return GameResolution.BLACK_WINS
+        return GameResolution.UNDECIDED
 
     def move(self, move: Move) -> bool:
         """

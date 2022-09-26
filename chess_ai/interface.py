@@ -1,8 +1,8 @@
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Union
 import pygame
 import pathlib
 from chess_ai import base_path
-from chess_ai.game import Piece, PieceColor, Game, Board, Move
+from chess_ai.game import Piece, PieceColor, Game, Board, Move, GameResolution
 
 pygame.init()
 pygame.font.init()
@@ -18,7 +18,7 @@ font_padding = 64
 screen = pygame.display.set_mode([512 + font_padding, 512 + font_padding])
 
 # load images
-images = {}
+images: Dict[Union[int, Piece], pygame.surface.Surface] = {}
 image_paths = {
     Piece.B_BISHOP: "img/black_bishop.png",
     Piece.B_KING: "img/black_king.png",
@@ -36,10 +36,26 @@ image_paths = {
 for piece, path in image_paths.items():
     images[piece] = pygame.image.load(str(base_path / path))
 
+def get_victory_banner(resolution: GameResolution) -> pygame.surface.Surface:
+    banner =  pygame.Surface((512, 512))
+    banner.set_alpha(192)                # alpha level
+    if resolution == GameResolution.WHITE_WINS:
+        banner.fill((255, 255, 255))
+        banner.blit(my_font.render("White wins!", False, (0, 0, 0)), (128, 128))
+    elif resolution == GameResolution.BLACK_WINS:
+        banner.fill((0, 0, 0))
+        banner.blit(my_font.render("Black wins!", False, (255, 255, 255)), (128, 128))
+    else:
+        banner.fill((192, 192, 192))
+        banner.blit(my_font.render("Draw!", False, (0, 0, 0)), (128, 128))
+    
+    return banner
+
 def update_display(
         board: Board,
         selected_square: Optional[Tuple[int, int]]=None,
-        legal_moves: Optional[List[Move]]=None
+        legal_moves: Optional[List[Move]]=None,
+        banner=None,
 ) -> None:
     # blank the screen
     screen.fill((255, 255, 255))
@@ -94,6 +110,9 @@ def update_display(
             if piece != Piece.EMPTY:
                 # images are 60x60, so we need to center them
                 screen.blit(images[piece], (font_padding / 2 + col * 64 + 2, font_padding / 2 + row * 64 + 2))
+    # then draw banner
+    if banner is not None:
+        screen.blit(banner, (font_padding / 2, font_padding / 2))
     pygame.display.flip()
 
 
@@ -104,6 +123,10 @@ legal_moves: Optional[List[Move]] = None
 
 running = True
 changed = True
+game_resolution = GameResolution.UNDECIDED
+
+banner = None
+
 while running:
 
     for event in pygame.event.get():
@@ -142,10 +165,13 @@ while running:
                             selected_square = (x, y)
                             legal_moves = game.validator.get_valid_moves(*selected_square)
 
-    update_display(game.board, selected_square, legal_moves)
-    
+    update_display(game.board, selected_square, legal_moves, banner=banner)
+
     # print game state to console
     if changed:
+        game_resolution = game.get_resolution()
+        if game_resolution != GameResolution.UNDECIDED:
+            banner = get_victory_banner(game_resolution)
         print(game)
         changed = False
 
