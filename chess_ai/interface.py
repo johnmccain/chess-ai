@@ -160,6 +160,8 @@ while running:
                         changed = True
                         selected_square = None
                         legal_moves = None
+                        # swap to other player
+                        game = game.swap()
                     else:
                         if Piece.color(game.board.get_piece(x, y)) == game.turn:
                             selected_square = (x, y)

@@ -65,6 +65,40 @@ class Piece(IntEnum):
             raise ValueError("Invalid piece")
 
     @staticmethod
+    def opposite(piece: int) -> int:
+        """
+        Return equivalent piece of opposite color.
+        """
+        if piece == Piece.B_PAWN:
+            return Piece.W_PAWN
+        elif piece == Piece.B_ROOK:
+            return Piece.W_ROOK
+        elif piece == Piece.B_KNIGHT:
+            return Piece.W_KNIGHT
+        elif piece == Piece.B_BISHOP:
+            return Piece.W_BISHOP
+        elif piece == Piece.B_QUEEN:
+            return Piece.W_QUEEN
+        elif piece == Piece.B_KING:
+            return Piece.W_KING
+        elif piece == Piece.W_PAWN:
+            return Piece.B_PAWN
+        elif piece == Piece.W_ROOK:
+            return Piece.B_ROOK
+        elif piece == Piece.W_KNIGHT:
+            return Piece.B_KNIGHT
+        elif piece == Piece.W_BISHOP:
+            return Piece.B_BISHOP
+        elif piece == Piece.W_QUEEN:
+            return Piece.B_QUEEN
+        elif piece == Piece.W_KING:
+            return Piece.B_KING
+        elif piece == Piece.EMPTY:
+            return Piece.EMPTY
+        else:
+            raise ValueError(f"Invalid piece {piece}")
+
+    @staticmethod
     def get_name(piece: int) -> str:
         if piece == Piece.B_PAWN:
             return "Black Pawn"
@@ -158,6 +192,19 @@ class Move:
     def __repr__(self):
         return f"Move(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2}, piece={self.piece}, move_type={self.move_type}, start_notation='{self.start_notation}', end_notation='{self.end_notation}')"
 
+    def swap(self) -> "Move":
+        """
+        Flip the coordinates of the move on the vertical axis and swap the piece color (as if the opposite player made the move)
+        """
+        return Move(
+            x1=self.x1,
+            y1=7 - self.y1,
+            x2=self.x2,
+            y2=7 - self.y2,
+            piece=Piece.opposite(self.piece),
+            move_type=self.move_type
+        )
+
 
 class Board:
     """
@@ -188,6 +235,22 @@ class Board:
         for y in range(8):
             for x in range(8):
                 yield x, y, self.get_piece(x, y)
+
+    def swap(self) -> "Board":
+        """
+        Swap the board as if white were black and vice versa.
+        """
+        board = np.flip(self.board.copy(), axis=0)
+        for x in range(8):
+            for y in range(8):
+                board[x, y] = Piece.opposite(board[x, y])
+        return Board(board)
+    
+    def get_pieces(self, color: PieceColor) -> List[Tuple[int, int, int]]:
+        """
+        Get a list of all pieces of a given color.
+        """
+        return [(x, y, piece) for x, y, piece in self if Piece.color(piece) == color]
 
     def validate_board_state(self):
         """
@@ -886,3 +949,11 @@ class Game:
             self.turn = PieceColor.opposite(self.turn)
             return True
         return False
+
+    def swap(self) -> "Game":
+        """
+        Swap the board and turn.
+        """
+        swapped_game = Game(self.board.swap(), PieceColor.opposite(self.turn))
+        swapped_game.history = [move.swap() for move in self.history]
+        return swapped_game
